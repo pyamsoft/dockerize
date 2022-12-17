@@ -665,7 +665,23 @@ main()
     # Then grab args
     args="$(compile_container_args "$@")"
 
-    printf -- 'Running container docker run --rm %s %s %s\n' \
+    printf -- 'Running systemd container docker run --rm %s %s %s\n' \
+      "${options}" "${CONTAINER_TARGET}" "${args}"
+
+    # Don't quote expansion - we want the raw strings
+    # shellcheck disable=SC2086
+    exec docker run --rm ${options} "${CONTAINER_TARGET}" ${args}
+  elif [ "$1" = "shell" ]; then
+    # Eat argument
+    shift
+
+    # Then grab args
+    args="$(compile_container_args "$@")"
+
+    # Add shell options to container (pray there is /bin/sh)
+    options="${options} -i -t --entrypoint /bin/sh"
+
+    printf -- 'Opening shell in container docker run --rm %s %s %s\n' \
       "${options}" "${CONTAINER_TARGET}" "${args}"
 
     # Don't quote expansion - we want the raw strings
