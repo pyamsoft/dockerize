@@ -26,6 +26,7 @@ The default environment is as follows:
 * `--init` is used
 * `--name` is used and will always match the name of the symlink. In the example above
   it is `--name=adguardhome`
+* `--hostname`, which is the same as the `--name`
 
 A custom unprivileged user `docker-{name}:dockerusers` is used to run the container.
 In the example above, it is `docker-adguardhome:dockerusers`.
