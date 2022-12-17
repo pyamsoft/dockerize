@@ -21,7 +21,7 @@ In order to use `dockerize`, you must first symlink it to a name:
 
 The default environment is as follows:
 
-* `--security-opt no-new-privileges` is used
+* `--security-opt no-new-privileges:true` is used
 * `--cap-drop ALL` is used
 * `--init` is used
 * `--name` is used and will always match the name of the symlink. In the example above
