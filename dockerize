@@ -253,7 +253,12 @@ CONTAINER_DIRS=""
 CONTAINER_PORTS=""
 
 # Capabilities: Format like --cap-add (these are only added, everything is DROPPED by default)
-# Will be prepended with --cap-add
+# Will be prepended with --cap-add. You may need to add capabilities, as this script is run with
+# security be default of: --security-opt no-new-privileges:true --cap-drop ALL
+#
+# https://github.com/moby/moby/blob/master/oci/caps/defaults.go#L6-L19
+# These are the "default" capabilities a docker container is normally created with.
+#
 # Ex: NET_ADMIN NET_BIND_SERVICE -> "--cap-add NET_ADMIN --cap-add NET_BIND_SERVICE"
 #
 # CONTAINER_CAPS="NET_BIND_SERVICE NET_ADMIN"
@@ -264,7 +269,13 @@ CONTAINER_CAPS=""
 # This user will be parsed into the --user=uid:gid format,
 # where the UID is the resolved UID of the provided user, and the group
 # is the users primary Group.
-# Ex: root -> --user=0:0
+# Passing "root" will remove the default functionality, which is to create and then
+# use a custom docker container user
+#
+# To specify a custom UID:GID, you should pass "root" here and then add the --user option to
+# CONTAINER_OPTIONS
+#
+# Ex: root -> (Removes the default --user option that would normally be passed)
 # Ex: myuser -> --user=1000:1000
 # Ex: 700 -> --user=700:700
 #
@@ -274,7 +285,7 @@ CONTAINER_USER=""
 # Options: Any options passed to the container raw
 # Passed directory to docker run
 # 
-# CONTAINER_OPTIONS="-i -t --read-only"
+# CONTAINER_OPTIONS="--init -i -t --read-only"
 CONTAINER_OPTIONS=""
 
 # Arguments: Passed directly to the command ran inside the container.
@@ -420,7 +431,7 @@ compile_container_options()
 {
   # NOTE: Do not log anything in this function as we export the stdout as a variable
 
-  my_container_options="--name ${_name} --hostname ${_name} --init --security-opt no-new-privileges:true --cap-drop ALL"
+  my_container_options="--name ${_name} --hostname ${_name} --security-opt no-new-privileges:true --cap-drop ALL"
 
   # Volume mounts in the format {host_directory_relative}:{container_absolute}
   for d in ${CONTAINER_DIRS}; do

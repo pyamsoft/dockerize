@@ -23,7 +23,6 @@ The default environment is as follows:
 
 * `--security-opt no-new-privileges:true` is used
 * `--cap-drop ALL` is used
-* `--init` is used
 * `--name` is used and will always match the name of the symlink. In the example above
   it is `--name=adguardhome`
 * `--hostname`, which is the same as the `--name`
