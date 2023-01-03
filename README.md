@@ -26,6 +26,7 @@ The default environment is as follows:
 * `--name` is used and will always match the name of the symlink. In the example above
   it is `--name=adguardhome`
 * `--hostname`, which is the same as the `--name`
+* A route to the host machine is added as `--add-host=host.docker.internal:host-gateway`
 
 A custom unprivileged user `docker-{name}:dockerusers` is used to run the container.
 In the example above, it is `docker-adguardhome:dockerusers`.
@@ -48,7 +49,7 @@ which will run `dockerize` and perform the following.
    `dockerusers` group.
 4. Any local volume paths specified in the `container` configuration are created,
    and owned by the `docker-*` user (unless overridden).
-5. The Docker container is called using `docker run --init` and passed various arguments.
+5. The Docker container is called using `docker run` and passed various arguments.
 
 The systemd service `dockerize@.service` can be used to run `dockerize` scripts
 via the `systemctl` command for easier management.
