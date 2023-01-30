@@ -386,32 +386,35 @@ prepare_dirs()
     # Grab only the first section => direction /container/directory -> directory
     # Prepend the _app container and run mkdir
     path_d="${_app}/$(printf -- '%s' "${d}" | tr ':' ' ' | awk '{ print $1 }')"
-    printf -- 'Create host directory: %s\n' "${path_d}"
-    mkdir -p "${path_d}" || {
-      printf -- 'Failed to create host directory %s\n' "${path_d}"
+    if [ ! -d "${path_d}" ]; then
+      printf -- 'Create host directory: %s\n' "${path_d}"
 
-      unset d
-      unset path_d
-      return 1
-    }
+      mkdir -p "${path_d}" || {
+        printf -- 'Failed to create host directory %s\n' "${path_d}"
 
-    # Own the directory as the docker user
-    ${use_sudo} chown "${d_user}:${d_group}" "${path_d}" || {
-      printf -- 'Failed to own the host directory %s\n' "${path_d}"
+        unset d
+        unset path_d
+        return 1
+      }
 
-      unset d
-      unset path_d
-      return 1
-    }
+      # Own the directory as the docker user
+      ${use_sudo} chown "${d_user}:${d_group}" "${path_d}" || {
+        printf -- 'Failed to own the host directory %s\n' "${path_d}"
 
-    # Mark the directory accessible to owner and group only
-    ${use_sudo} chmod 750 "${path_d}" || {
-      printf -- 'Failed to chmod the host directory %s\n' "${path_d}"
+        unset d
+        unset path_d
+        return 1
+      }
 
-      unset d
-      unset path_d
-      return 1
-    }
+      # Mark the directory accessible to owner and group only
+      ${use_sudo} chmod 750 "${path_d}" || {
+        printf -- 'Failed to chmod the host directory %s\n' "${path_d}"
+
+        unset d
+        unset path_d
+        return 1
+      }
+    fi
 
     unset d
     unset path_d
