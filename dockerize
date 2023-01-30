@@ -13,8 +13,30 @@ d_group=""
 # to this script which can be generically named
 _name="$(basename "$0")"
 
-# The root of docker configuration on the host machine
-_root="/usr/local/etc/docker"
+if [ "${_name}" = "dockerize" ]; then
+  printf -- 'You must symlink this script to a different name.\n'
+  exit 1
+fi
+
+# Use sudo if we are not root
+if [ "$(id -u)" -eq 0 ]; then
+  use_sudo=""
+
+  # And set the umask so stuff won't break for a "normal" user
+  umask 0022
+
+  # The root of docker configuration on the host machine
+  _root="/usr/local/etc/docker"
+else
+  use_sudo="sudo"
+
+  # Restrict the umask for this user
+  umask 0077
+
+  # The root of docker configuration on the host machine
+  _root="${HOME}/.local/etc/docker"
+fi
+
 _app="${_root}/${_name}"
 
 ##
@@ -31,7 +53,7 @@ __linux_enable_bridge_network()
 {
   # Enable IP forwarding for container bridge networking
   printf -- 'Enable IPv4 forwarding for bridge networking\n'
-  sysctl -q -w net.ipv4.ip_forward=1 || {
+  ${use_sudo} sysctl -q -w net.ipv4.ip_forward=1 || {
     printf -- 'Failed to enable IPv4 forwarding\n'
     return 1
   }
@@ -48,7 +70,7 @@ __linux_create_docker_usergroup()
     printf -- 'Creating docker container group: %s\n' "${d_group}"
     # Create a group for docker users
     # Assign it to the d_group as primary
-    groupadd "${d_group}" || {
+    ${use_sudo} groupadd "${d_group}" || {
       printf -- 'Could not make docker group: %s\n' "${d_group}"
       return 1
     }
@@ -59,14 +81,14 @@ __linux_create_docker_usergroup()
     printf -- 'Creating docker container user: %s\n' "${d_user}"
     # Create a user with no home, and no user group.
     # Assign it to the d_group as primary
-    useradd --no-create-home --no-user-group -g "${d_group}" "${d_user}" || {
+    ${use_sudo} useradd --no-create-home --no-user-group -g "${d_group}" "${d_user}" || {
       printf -- 'Could not make docker user: %s\n' "${d_user}"
       return 1
     }
   fi
 
   # Add user to group
-  gpasswd -a "${d_user}" "${d_group}" || {
+  ${use_sudo} gpasswd -a "${d_user}" "${d_group}" || {
     printf -- 'Failed to add docker user to group %s -> %s\n' "${d_user}" "${d_group}"
     return 1
   }
@@ -90,7 +112,7 @@ __mac_create_docker_usergroup()
       new_gid="$(( highest_gid + 1 ))"
 
       # Create the group
-      dscl . create /Groups/"${d_group}" || {
+      ${use_sudo} dscl . create /Groups/"${d_group}" || {
         printf -- 'Failed to create /Groups/%s\n' "${d_group}"
 
         unset highest_gid
@@ -99,7 +121,7 @@ __mac_create_docker_usergroup()
       }
 
       # Assign group ID
-      dscl . create /Groups/"${d_group}" gid "${new_gid}" || {
+      ${use_sudo} dscl . create /Groups/"${d_group}" gid "${new_gid}" || {
         printf -- 'Failed to assign /Groups/%s GID: %s\n' "${d_group}" "${new_gid}"
 
         unset highest_gid
@@ -108,7 +130,7 @@ __mac_create_docker_usergroup()
       }
 
       # Assign Group name
-      dscl . create /Groups/"${d_group}" RealName "Docker Users" || {
+      ${use_sudo} dscl . create /Groups/"${d_group}" RealName "Docker Users" || {
         printf -- 'Failed to assign /Groups/%s RealName\n' "${d_group}"
 
         unset highest_gid
@@ -117,7 +139,7 @@ __mac_create_docker_usergroup()
       }
 
       # Assign Group passwd
-      dscl . create /Groups/"${d_group}" passwd "*" || {
+      ${use_sudo} dscl . create /Groups/"${d_group}" passwd "*" || {
         printf -- 'Failed to assign /Groups/%s passwd\n' "${d_group}"
 
         unset highest_gid
@@ -135,7 +157,7 @@ __mac_create_docker_usergroup()
       new_uid="$(( highest_uid + 1 ))"
 
       # Create user
-      dscl . -create /Users/"${d_user}" || {
+      ${use_sudo} dscl . -create /Users/"${d_user}" || {
         printf -- 'Failed to create new user %s\n' "${d_user}"
 
         unset highest_uid
@@ -144,7 +166,7 @@ __mac_create_docker_usergroup()
       }
 
       # Assign UID
-      dscl . -create /Users/"${d_user}" UniqueID "${new_uid}"  || {
+      ${use_sudo} dscl . -create /Users/"${d_user}" UniqueID "${new_uid}"  || {
         printf -- 'Failed to assign  user UID %s %s\n' "${d_user}" "${new_uid}"
 
         unset highest_uid
@@ -154,16 +176,16 @@ __mac_create_docker_usergroup()
 
       existing_group_id="$(dscl . list /groups PrimaryGroupID | grep "${d_group}" | awk '{print $2}')"
 
-      dscl . -create /Users/"${d_user}" UserShell /bin/nologin
-      dscl . -create /Users/"${d_user}" RealName "Docker ${_name}"
-      dscl . -create /Users/"${d_user}" PrimaryGroupID "${existing_group_id}"
+      ${use_sudo} dscl . -create /Users/"${d_user}" UserShell /bin/nologin
+      ${use_sudo} dscl . -create /Users/"${d_user}" RealName "Docker ${_name}"
+      ${use_sudo} dscl . -create /Users/"${d_user}" PrimaryGroupID "${existing_group_id}"
 
       unset highest_uid
       unset new_uid
     fi
 
     # Add user to group
-    dscl . append /Groups/"${d_group}" GroupMembership "${d_user}" || {
+    ${use_sudo} dscl . append /Groups/"${d_group}" GroupMembership "${d_user}" || {
       printf -- 'Failed to add user to group %s -> %s\n' "${d_user}" "${d_group}"
       return 1
     }
@@ -197,7 +219,7 @@ attempt_create_container()
   }
 
   # Own the directory as the docker user
-  chown "${d_user}:${d_group}" "${_app}" || {
+  ${use_sudo} chown "${d_user}:${d_group}" "${_app}" || {
     printf -- 'Failed to own the host directory %s\n' "${_app}"
 
     unset create_container
@@ -205,7 +227,7 @@ attempt_create_container()
   }
 
   # Mark the directory accessible to owner and group only
-  chmod 750 "${_app}" || {
+  ${use_sudo} chmod 750 "${_app}" || {
     printf -- 'Failed to chmod the host directory %s\n' "${_app}"
 
     unset create_container
@@ -294,12 +316,12 @@ CONTAINER_OPTIONS=""
 # CONTAINER_ARGS="--verbose help"
 CONTAINER_ARGS=""
 EOF
-)" > "${create_container}"
+)" | tee "${create_container}" > /dev/null
 
   printf -- 'Created empty container environment at %s\n' "${create_container}"
 
-  # Own the configuration as the root user
-  chown 0:0 "${create_container}" || {
+  # Own the configuration as the container user
+  ${use_sudo} chown "${d_user}:${d_group}" "${create_container}" || {
     printf -- 'Failed to own the host configuration file %s\n' "${_app}"
 
     unset create_container
@@ -307,7 +329,7 @@ EOF
   }
 
   # Mark the configuration accessible to owner and group only
-  chmod 600 "${create_container}" || {
+  ${use_sudo} chmod 640 "${create_container}" || {
     printf -- 'Failed to chmod the host configuration file %s\n' "${_app}"
 
     unset create_container
@@ -374,7 +396,7 @@ prepare_dirs()
     }
 
     # Own the directory as the docker user
-    chown "${d_user}:${d_group}" "${path_d}" || {
+    ${use_sudo} chown "${d_user}:${d_group}" "${path_d}" || {
       printf -- 'Failed to own the host directory %s\n' "${path_d}"
 
       unset d
@@ -383,7 +405,7 @@ prepare_dirs()
     }
 
     # Mark the directory accessible to owner and group only
-    chmod 750 "${path_d}" || {
+    ${use_sudo} chmod 750 "${path_d}" || {
       printf -- 'Failed to chmod the host directory %s\n' "${path_d}"
 
       unset d
@@ -621,13 +643,6 @@ main()
   # or when running docker.
   #
   # We don't need to be root per se, just have perm and docker access.
-
-  # Set the umask for user, group, but no other
-  umask 0027 || {
-    printf -- 'Failed to set restrictive umask 0027\n'
-    return 1
-  }
-
   init_user || {
     printf -- 'Failed to initialize user\n'
     return 1
@@ -674,14 +689,14 @@ main()
   # Compile all options into one
   options="$(compile_container_options)"
 
-  if [ "$1" = "systemd" ]; then
+  if [ "$1" = "systemd" ] || [ "$1" = "foreground" ]; then
     # Eat argument
     shift
 
     # Then grab args
     args="$(compile_container_args "$@")"
 
-    printf -- 'Running systemd container docker run --rm %s %s %s\n' \
+    printf -- 'Running systemd|foreground container docker run --rm %s %s %s\n' \
       "${options}" "${CONTAINER_TARGET}" "${args}"
 
     # Don't quote expansion - we want the raw strings
