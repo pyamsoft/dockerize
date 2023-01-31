@@ -14,7 +14,7 @@ d_group=""
 _name="$(basename "$0")"
 
 if [ "${_name}" = "dockerize" ]; then
-  printf -- 'You must symlink this script to a different name.\n'
+  printf -- '[-] You must symlink this script to a different name.\n'
   exit 1
 fi
 
@@ -43,7 +43,7 @@ _app="${_root}/${_name}"
 # Enable bridge networking on MacOS
 __mac_enable_bridge_network()
 {
-  printf -- 'MacOS enables bridge networking through VM implementation\n'
+  printf -- '  MacOS enables bridge networking through VM implementation\n'
   return 0
 }
 
@@ -52,11 +52,15 @@ __mac_enable_bridge_network()
 __linux_enable_bridge_network()
 {
   # Enable IP forwarding for container bridge networking
-  printf -- 'Enable IPv4 forwarding for bridge networking\n'
-  ${use_sudo} sysctl -q -w net.ipv4.ip_forward=1 || {
-    printf -- 'Failed to enable IPv4 forwarding\n'
-    return 1
-  }
+  if sysctl net.ipv4.ip_forward | grep -q '= 1'; then
+    printf -- '  IPv4 forwarding is enabled for bridge networking\n'
+  else
+    printf -- '  Enabling IPv4 forwarding for bridge networking\n'
+    ${use_sudo} sysctl -q -w net.ipv4.ip_forward=1 || {
+      printf -- '  Failed to enable IPv4 forwarding\n'
+      return 1
+    }
+  fi
 
   return 0
 }
@@ -67,31 +71,31 @@ __linux_create_docker_usergroup()
 {
   # Check that the group does not already exist
   if ! getent group "${d_group}" > /dev/null; then
-    printf -- 'Creating docker container group: %s\n' "${d_group}"
+    printf -- '  Creating docker container group: %s\n' "${d_group}"
     # Create a group for docker users
     # Assign it to the d_group as primary
     ${use_sudo} groupadd "${d_group}" || {
-      printf -- 'Could not make docker group: %s\n' "${d_group}"
+      printf -- '  Could not make docker group: %s\n' "${d_group}"
       return 1
     }
   fi
 
   # Check that the user does not already exist
   if ! getent passwd "${d_user}" > /dev/null; then
-    printf -- 'Creating docker container user: %s\n' "${d_user}"
+    printf -- '  Creating docker container user: %s\n' "${d_user}"
     # Create a user with no home, and no user group.
     # Assign it to the d_group as primary
     ${use_sudo} useradd --no-create-home --no-user-group -g "${d_group}" "${d_user}" || {
-      printf -- 'Could not make docker user: %s\n' "${d_user}"
+      printf -- '  Could not make docker user: %s\n' "${d_user}"
+      return 1
+    }
+
+    # Add user to group
+    ${use_sudo} gpasswd -a "${d_user}" "${d_group}" || {
+      printf -- '  Failed to add docker user to group %s -> %s\n' "${d_user}" "${d_group}"
       return 1
     }
   fi
-
-  # Add user to group
-  ${use_sudo} gpasswd -a "${d_user}" "${d_group}" || {
-    printf -- 'Failed to add docker user to group %s -> %s\n' "${d_user}" "${d_group}"
-    return 1
-  }
 
   return 0
 }
@@ -104,7 +108,7 @@ __mac_create_docker_usergroup()
 {
   if [ "${IS_MACOS_MESSED_UP}" -ne 0 ]; then
     # MacOS volume mounting UID permission is messed up, don't do it
-    printf -- 'MacOS volume mounts are messed up, do not dscl\n'
+    printf -- '  MacOS volume mounts are messed up, do not dscl\n'
   else
     # Check that the group does not already exist
     if ! dscl . list /groups | grep "${d_group}" > /dev/null; then
@@ -113,7 +117,7 @@ __mac_create_docker_usergroup()
 
       # Create the group
       ${use_sudo} dscl . create /Groups/"${d_group}" || {
-        printf -- 'Failed to create /Groups/%s\n' "${d_group}"
+        printf -- '  Failed to create /Groups/%s\n' "${d_group}"
 
         unset highest_gid
         unset new_gid
@@ -122,7 +126,7 @@ __mac_create_docker_usergroup()
 
       # Assign group ID
       ${use_sudo} dscl . create /Groups/"${d_group}" gid "${new_gid}" || {
-        printf -- 'Failed to assign /Groups/%s GID: %s\n' "${d_group}" "${new_gid}"
+        printf -- '  Failed to assign /Groups/%s GID: %s\n' "${d_group}" "${new_gid}"
 
         unset highest_gid
         unset new_gid
@@ -131,7 +135,7 @@ __mac_create_docker_usergroup()
 
       # Assign Group name
       ${use_sudo} dscl . create /Groups/"${d_group}" RealName "Docker Users" || {
-        printf -- 'Failed to assign /Groups/%s RealName\n' "${d_group}"
+        printf -- '  Failed to assign /Groups/%s RealName\n' "${d_group}"
 
         unset highest_gid
         unset new_gid
@@ -140,7 +144,7 @@ __mac_create_docker_usergroup()
 
       # Assign Group passwd
       ${use_sudo} dscl . create /Groups/"${d_group}" passwd "*" || {
-        printf -- 'Failed to assign /Groups/%s passwd\n' "${d_group}"
+        printf -- '  Failed to assign /Groups/%s passwd\n' "${d_group}"
 
         unset highest_gid
         unset new_gid
@@ -158,7 +162,7 @@ __mac_create_docker_usergroup()
 
       # Create user
       ${use_sudo} dscl . -create /Users/"${d_user}" || {
-        printf -- 'Failed to create new user %s\n' "${d_user}"
+        printf -- '  Failed to create new user %s\n' "${d_user}"
 
         unset highest_uid
         unset new_uid
@@ -167,7 +171,7 @@ __mac_create_docker_usergroup()
 
       # Assign UID
       ${use_sudo} dscl . -create /Users/"${d_user}" UniqueID "${new_uid}"  || {
-        printf -- 'Failed to assign  user UID %s %s\n' "${d_user}" "${new_uid}"
+        printf -- '  Failed to assign  user UID %s %s\n' "${d_user}" "${new_uid}"
 
         unset highest_uid
         unset new_uid
@@ -182,13 +186,13 @@ __mac_create_docker_usergroup()
 
       unset highest_uid
       unset new_uid
-    fi
 
-    # Add user to group
-    ${use_sudo} dscl . append /Groups/"${d_group}" GroupMembership "${d_user}" || {
-      printf -- 'Failed to add user to group %s -> %s\n' "${d_user}" "${d_group}"
-      return 1
-    }
+      # Add user to group
+      ${use_sudo} dscl . append /Groups/"${d_group}" GroupMembership "${d_user}" || {
+        printf -- '  Failed to add user to group %s -> %s\n' "${d_user}" "${d_group}"
+        return 1
+      }
+    fi
   fi
 
   return 0
@@ -204,7 +208,7 @@ attempt_create_container()
 
   # Check we have container
   if [ -z "${create_container}" ]; then
-    printf -- 'Could not attempt container create, no name defined.\n'
+    printf -- '  Could not attempt container create, no name defined.\n'
 
     unset create_container
     return 1
@@ -212,7 +216,7 @@ attempt_create_container()
 
   # Make the root directory
   mkdir -p "${_app}" || {
-    printf -- 'Unable to create docker directory: %s\n' "${_app}"
+    printf -- '  Unable to create docker directory: %s\n' "${_app}"
 
     unset create_container
     return 1
@@ -301,25 +305,25 @@ CONTAINER_OPTIONS=""
 CONTAINER_ARGS=""
 EOF
 )" | tee "${create_container}" > /dev/null || {
-    printf -- 'Failed to create container configuration %s\n' "${create_container}"
+    printf -- '  Failed to create container configuration %s\n' "${create_container}"
 
     unset create_container
     return 1
   }
 
-  printf -- 'Created empty container environment at %s\n' "${create_container}"
+  printf -- '  Created empty container environment at %s\n' "${create_container}"
 
   # Own the directory as the docker user
   ${use_sudo} chown "${d_user}:${d_group}" "${_app}" || {
-    printf -- 'Failed to own the host directory %s\n' "${_app}"
+    printf -- '  Failed to own the host directory %s\n' "${_app}"
 
     unset create_container
     return 1
   }
 
   # Mark the directory accessible to owner and group only
-  ${use_sudo} chmod 750 "${_app}" || {
-    printf -- 'Failed to chmod the host directory %s\n' "${_app}"
+  ${use_sudo} chmod 770 "${_app}" || {
+    printf -- '  Failed to chmod the host directory %s\n' "${_app}"
 
     unset create_container
     return 1
@@ -327,7 +331,7 @@ EOF
 
   # Own the configuration as the container user
   ${use_sudo} chown "${d_user}:${d_group}" "${create_container}" || {
-    printf -- 'Failed to own the host configuration file %s\n' "${_app}"
+    printf -- '  Failed to own the host configuration file %s\n' "${_app}"
 
     unset create_container
     return 1
@@ -335,7 +339,7 @@ EOF
 
   # Mark the configuration accessible to owner and group only
   ${use_sudo} chmod 640 "${create_container}" || {
-    printf -- 'Failed to chmod the host configuration file %s\n' "${_app}"
+    printf -- '  Failed to chmod the host configuration file %s\n' "${_app}"
 
     unset create_container
     return 1
@@ -356,7 +360,7 @@ source_container()
   if [ ! -r "${container_env}" ]; then
     # We failed, but try to create the directory
     attempt_create_container "${container_env}" || {
-      printf -- 'Failed to create attempted container: %s\n' "${container_env}"
+      printf -- '  Failed to create attempted container: %s\n' "${container_env}"
       unset container_env
       return 1
     }
@@ -385,6 +389,8 @@ source_container()
 #
 prepare_dirs()
 {
+  printf -- '[+] Prepare container local volumes...\n'
+
   for d in ${CONTAINER_DIRS}; do
     # This is a volume format, grab just the host directory name
     # Split the string by ':' => directory:/container/directory -> directory /container/directory
@@ -392,10 +398,10 @@ prepare_dirs()
     # Prepend the _app container and run mkdir
     path_d="${_app}/$(printf -- '%s' "${d}" | tr ':' ' ' | awk '{ print $1 }')"
     if [ ! -d "${path_d}" ]; then
-      printf -- 'Create host directory: %s\n' "${path_d}"
+      printf -- '  Create host directory: %s\n' "${path_d}"
 
       mkdir -p "${path_d}" || {
-        printf -- 'Failed to create host directory %s\n' "${path_d}"
+        printf -- '  Failed to create host directory %s\n' "${path_d}"
 
         unset d
         unset path_d
@@ -404,7 +410,7 @@ prepare_dirs()
 
       # Own the directory as the docker user
       ${use_sudo} chown "${d_user}:${d_group}" "${path_d}" || {
-        printf -- 'Failed to own the host directory %s\n' "${path_d}"
+        printf -- '  Failed to own the host directory %s\n' "${path_d}"
 
         unset d
         unset path_d
@@ -413,7 +419,7 @@ prepare_dirs()
 
       # Mark the directory accessible to owner and group only
       ${use_sudo} chmod 750 "${path_d}" || {
-        printf -- 'Failed to chmod the host directory %s\n' "${path_d}"
+        printf -- '  Failed to chmod the host directory %s\n' "${path_d}"
 
         unset d
         unset path_d
@@ -433,6 +439,8 @@ prepare_dirs()
 #
 enable_bridge_network()
 {
+  printf -- '[+] Prepare container networking...\n'
+
   # If we are running on MacOS, this sysctl won't work
   if [ "$(uname)" = "Darwin" ]; then
     __mac_enable_bridge_network || return 1
@@ -448,7 +456,7 @@ enable_bridge_network()
 check_container()
 {
   if [ -z "${CONTAINER_TARGET}" ]; then
-    printf -- 'Missing CONTAINER_TARGET for %s. Is your container environment valid?\n' "${_name}"
+    printf -- '  Missing CONTAINER_TARGET for %s. Is your container environment valid?\n' "${_name}"
     return 1
   fi
 
@@ -559,6 +567,8 @@ compile_container_args()
 # Creates a docker user and group for safer container access
 create_docker_usergroup()
 {
+  printf -- '[+] Ensure container user-group exists: %s %s\n' "${d_user}" "${d_group}"
+
   if [ "$(uname)" = "Darwin" ]; then
     __mac_create_docker_usergroup || return 1
   else
@@ -571,11 +581,11 @@ create_docker_usergroup()
 resolve_container_user()
 {
   if [ -z "${CONTAINER_USER}" ]; then
-    printf -- 'Prepare container with user %s:%s\n' "${d_user}" "${d_group}"
+    printf -- '  Prepare container with user %s:%s\n' "${d_user}" "${d_group}"
     return 0
   fi
 
-  printf -- 'Resolve container user from %s\n' "${CONTAINER_USER}"
+  printf -- '  Resolve container user from %s\n' "${CONTAINER_USER}"
 
   # Pull out the user|uid:group|gid
   split_user="$(printf -- '%s' "${CONTAINER_USER}" | tr ':' ' ')"
@@ -583,7 +593,7 @@ resolve_container_user()
 
   # Need a user
   if [ -z "${userlike}" ]; then
-    printf -- 'Missing user|uid in CONTAINER_USER: %s\n' "${CONTAINER_USER}"
+    printf -- '  Missing user|uid in CONTAINER_USER: %s\n' "${CONTAINER_USER}"
 
     unset split_user
     unset userlike
@@ -594,7 +604,7 @@ resolve_container_user()
   # Figure out the username
   d_user="$(id -u -n "${userlike}" 2>/dev/null)"
   if [ -z "${d_user}" ]; then
-    printf -- 'Invalid container user|uid: %s\n' "${userlike}"
+    printf -- '  Invalid container user|uid: %s\n' "${userlike}"
 
     unset split_user
     unset userlike
@@ -605,7 +615,7 @@ resolve_container_user()
   # Since we found a user, figure out the group too
   d_group="$(id -g -n "${userlike}" 2>/dev/null)"
   if [ -z "${d_group}" ]; then
-    printf -- 'Invalid container group for user: %s\n' "${d_user}"
+    printf -- '  Invalid container group for user: %s\n' "${d_user}"
 
     unset split_user
     unset userlike
@@ -629,7 +639,7 @@ init_user()
   # On MacOS we have a permission problem with files created in containers ignoring UID, so we instead ensure
   # docker runs as our current local user
   if [ "$(uname)" = "Darwin" ] && [ "${IS_MACOS_MESSED_UP}" -ne 0 ]; then
-    printf -- 'MacOS is buggy. Do not attempt user permission seperation.\n'
+    printf -- '  MacOS is buggy. Do not attempt user permission seperation.\n'
     d_user="$(id -un)"
     d_group="$(id -gn)"
   else
@@ -652,10 +662,12 @@ __has_docker_permission()
 
 __run_docker()
 {
+  printf -- '[+] Running container docker run %s\n' "$*"
+
   if __has_docker_permission; then
-    exec sudo docker run "$@"
-  else
     exec docker run "$@"
+  else
+    exec sudo docker run "$@"
   fi
 }
 
@@ -667,44 +679,44 @@ main()
   #
   # We don't need to be root per se, just have perm and docker access.
   init_user || {
-    printf -- 'Failed to initialize user\n'
+    printf -- '  Failed to initialize user\n'
     return 1
   }
 
   # Create docker user and group
   create_docker_usergroup || {
-    printf -- 'Failed to create docker usergroup %s %s\n' "${d_user}" "${d_group}"
+    printf -- '  Failed to create docker usergroup %s %s\n' "${d_user}" "${d_group}"
     return 1
   }
 
   # Source the container environment
   source_container "${_app}/container" || {
-    printf -- 'Could not source container environment file: %s\n' "${_app}/container"
+    printf -- '  Could not source container environment file: %s\n' "${_app}/container"
     return 1
   }
 
   # Validate the container environment
   check_container || {
-    printf -- 'Invalid docker environment %s\n' "${_name}"
+    printf -- '  Invalid docker environment %s\n' "${_name}"
     return 1
   }
 
   # Set IP forwarding for bridge networking
   enable_bridge_network || {
-    printf -- 'Could not enable bridge network for container %s.\n' "${_name}"
+    printf -- '  Could not enable bridge network for container %s.\n' "${_name}"
     return 1
   }
 
   # Set the user for the following steps based on the CONTAINER_USER if possible
   resolve_container_user || {
-    printf -- 'Could not resolve user for container %s.\n' "${_name}"
+    printf -- '  Could not resolve user for container %s.\n' "${_name}"
     return 1
   }
 
   # Prepare mounts
   if [ -n "${CONTAINER_DIRS}" ]; then
     prepare_dirs || {
-      printf -- 'Could not setup docker directories %s\n' "${CONTAINER_DIRS}"
+      printf -- '  Could not setup docker directories %s\n' "${CONTAINER_DIRS}"
       return 1
     }
   fi
@@ -719,9 +731,6 @@ main()
     # Then grab args
     args="$(compile_container_args "$@")"
 
-    printf -- 'Running systemd|foreground container docker run --rm %s %s %s\n' \
-      "${options}" "${CONTAINER_TARGET}" "${args}"
-
     # Don't quote expansion - we want the raw strings
     # shellcheck disable=SC2086
     __run_docker --rm ${options} "${CONTAINER_TARGET}" ${args}
@@ -735,9 +744,6 @@ main()
     # Add shell options to container (pray there is /bin/sh)
     options="${options} -i -t --entrypoint /bin/sh"
 
-    printf -- 'Opening shell in container docker run --rm %s %s %s\n' \
-      "${options}" "${CONTAINER_TARGET}" "${args}"
-
     # Don't quote expansion - we want the raw strings
     # shellcheck disable=SC2086
     __run_docker --rm ${options} "${CONTAINER_TARGET}" ${args}
@@ -745,8 +751,6 @@ main()
     # Then grab args
     args="$(compile_container_args "$@")"
 
-    printf -- 'Running container docker run --restart unless-stopped -d %s %s %s\n' \
-      "${options}" "${CONTAINER_TARGET}" "${args}"
 
     # Don't quote expansion - we want the raw strings
     # shellcheck disable=SC2086
