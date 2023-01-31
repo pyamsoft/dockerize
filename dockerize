@@ -218,22 +218,6 @@ attempt_create_container()
     return 1
   }
 
-  # Own the directory as the docker user
-  ${use_sudo} chown "${d_user}:${d_group}" "${_app}" || {
-    printf -- 'Failed to own the host directory %s\n' "${_app}"
-
-    unset create_container
-    return 1
-  }
-
-  # Mark the directory accessible to owner and group only
-  ${use_sudo} chmod 750 "${_app}" || {
-    printf -- 'Failed to chmod the host directory %s\n' "${_app}"
-
-    unset create_container
-    return 1
-  }
-
   # Create empty config
   #
   printf -- '%s\n' "$(cat << EOF
@@ -316,9 +300,30 @@ CONTAINER_OPTIONS=""
 # CONTAINER_ARGS="--verbose help"
 CONTAINER_ARGS=""
 EOF
-)" | tee "${create_container}" > /dev/null
+)" | tee "${create_container}" > /dev/null || {
+    printf -- 'Failed to create container configuration %s\n' "${create_container}"
+
+    unset create_container
+    return 1
+  }
 
   printf -- 'Created empty container environment at %s\n' "${create_container}"
+
+  # Own the directory as the docker user
+  ${use_sudo} chown "${d_user}:${d_group}" "${_app}" || {
+    printf -- 'Failed to own the host directory %s\n' "${_app}"
+
+    unset create_container
+    return 1
+  }
+
+  # Mark the directory accessible to owner and group only
+  ${use_sudo} chmod 750 "${_app}" || {
+    printf -- 'Failed to chmod the host directory %s\n' "${_app}"
+
+    unset create_container
+    return 1
+  }
 
   # Own the configuration as the container user
   ${use_sudo} chown "${d_user}:${d_group}" "${create_container}" || {
@@ -639,6 +644,21 @@ init_user()
   return 0
 }
 
+__has_docker_permission()
+{
+  docker version > /dev/null 2>&1
+  return "$?"
+}
+
+__run_docker()
+{
+  if __has_docker_permission; then
+    exec sudo docker run "$@"
+  else
+    exec docker run "$@"
+  fi
+}
+
 main()
 {
   # We don't need to check for root as the command will fail
@@ -704,7 +724,7 @@ main()
 
     # Don't quote expansion - we want the raw strings
     # shellcheck disable=SC2086
-    exec docker run --rm ${options} "${CONTAINER_TARGET}" ${args}
+    __run_docker --rm ${options} "${CONTAINER_TARGET}" ${args}
   elif [ "$1" = "shell" ]; then
     # Eat argument
     shift
@@ -720,7 +740,7 @@ main()
 
     # Don't quote expansion - we want the raw strings
     # shellcheck disable=SC2086
-    exec docker run --rm ${options} "${CONTAINER_TARGET}" ${args}
+    __run_docker --rm ${options} "${CONTAINER_TARGET}" ${args}
   else
     # Then grab args
     args="$(compile_container_args "$@")"
@@ -730,7 +750,7 @@ main()
 
     # Don't quote expansion - we want the raw strings
     # shellcheck disable=SC2086
-    exec docker run --restart unless-stopped -d ${options} "${CONTAINER_TARGET}" ${args}
+    __run_docker --restart unless-stopped -d ${options} "${CONTAINER_TARGET}" ${args}
    fi
 }
 
